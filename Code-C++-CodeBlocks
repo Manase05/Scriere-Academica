@@ -6,6 +6,7 @@
 #include <fstream>
 #include <string>
 #include <iomanip>
+#include <cmath>
 
 using namespace std;
 using namespace std::chrono;
@@ -30,18 +31,78 @@ void selectionSort(vector<int>& arr) {
     }
 }
 
-void insertionSort(vector<int>& arr) {
-    int n = arr.size();
-    for (int i = 1; i < n; i++) {
+void insertionSort(vector<int>& arr, int left, int right) {
+    for (int i = left + 1; i <= right; i++) {
         int key = arr[i];
         int j = i - 1;
-        while (j >= 0 && arr[j] > key) {
+        while (j >= left && arr[j] > key) {
             arr[j + 1] = arr[j];
-            j = j - 1;
+            j--;
         }
         arr[j + 1] = key;
     }
 }
+
+void insertionSortWrapper(vector<int>& arr) {
+    if (!arr.empty()) insertionSort(arr, 0, arr.size() - 1);
+}
+
+
+void heapify(vector<int>& arr, int n, int i, int start) {
+    int largest = i;
+    int l = 2 * i + 1;
+    int r = 2 * i + 2;
+    if (l < n && arr[start + l] > arr[start + largest]) largest = l;
+    if (r < n && arr[start + r] > arr[start + largest]) largest = r;
+    if (largest != i) {
+        swap(arr[start + i], arr[start + largest]);
+        heapify(arr, n, largest, start);
+    }
+}
+
+void heapSort(vector<int>& arr, int left, int right) {
+    int n = right - left + 1;
+    for (int i = n / 2 - 1; i >= 0; i--) heapify(arr, n, i, left);
+    for (int i = n - 1; i > 0; i--) {
+        swap(arr[left], arr[left + i]);
+        heapify(arr, i, 0, left);
+    }
+}
+
+int partition(vector<int>& arr, int low, int high) {
+    int pivot = arr[high];
+    int i = (low - 1);
+    for (int j = low; j <= high - 1; j++) {
+        if (arr[j] < pivot) {
+            i++;
+            swap(arr[i], arr[j]);
+        }
+    }
+    swap(arr[i + 1], arr[high]);
+    return (i + 1);
+}
+
+void introSortRecursive(vector<int>& arr, int left, int right, int depthLimit) {
+    int size = right - left + 1;
+    if (size < 16) {
+        insertionSort(arr, left, right);
+        return;
+    }
+    if (depthLimit == 0) {
+        heapSort(arr, left, right);
+        return;
+    }
+    int p = partition(arr, left, right);
+    introSortRecursive(arr, left, p - 1, depthLimit - 1);
+    introSortRecursive(arr, p + 1, right, depthLimit - 1);
+}
+
+void introSortWrapper(vector<int>& arr) {
+    if (arr.empty()) return;
+    int depthLimit = 2 * log2(arr.size());
+    introSortRecursive(arr, 0, arr.size() - 1, depthLimit);
+}
+
 
 void merge(vector<int>& arr, int l, int m, int r) {
     int n1 = m - l + 1;
@@ -67,6 +128,8 @@ void mergeSort(vector<int>& arr, int l, int r) {
     }
 }
 
+void mergeSortWrapper(vector<int>& v) { if(!v.empty()) mergeSort(v, 0, v.size()-1); }
+
 void quickSort(vector<int>& arr, int left, int right) {
     int i = left, j = right;
     int pivot = arr[left + (right - left) / 2];
@@ -82,13 +145,15 @@ void quickSort(vector<int>& arr, int left, int right) {
     if (i < right) quickSort(arr, i, right);
 }
 
+void quickSortWrapper(vector<int>& v) { if(!v.empty()) quickSort(v, 0, v.size()-1); }
+void stdSortWrapper(vector<int>& v) { sort(v.begin(), v.end()); }
+
 
 enum DataType { RANDOM, SORTED, REVERSE_SORTED, NEARLY_SORTED, FLAT };
 
 vector<int> generateData(int n, DataType type) {
     vector<int> data(n);
-    random_device rd;
-    mt19937 gen(rd());
+    static mt19937 gen(42);
 
     if (type == RANDOM) {
         uniform_int_distribution<> dis(1, 1000000);
@@ -108,7 +173,6 @@ vector<int> generateData(int n, DataType type) {
     return data;
 }
 
-
 double measureTime(void (*sortFunc)(vector<int>&), vector<int>& data) {
     auto start = high_resolution_clock::now();
     sortFunc(data);
@@ -117,12 +181,9 @@ double measureTime(void (*sortFunc)(vector<int>&), vector<int>& data) {
     return diff.count();
 }
 
-void quickSortWrapper(vector<int>& v) { if(!v.empty()) quickSort(v, 0, v.size()-1); }
-void mergeSortWrapper(vector<int>& v) { if(!v.empty()) mergeSort(v, 0, v.size()-1); }
-void stdSortWrapper(vector<int>& v) { sort(v.begin(), v.end()); }
-
 int main() {
     ofstream fout("rezultate_sortare.csv");
+    fout << fixed << setprecision(12);
     fout << "Algoritm,Dimensiune,TipDate,Timp(secunde)\n";
 
     vector<int> sizes = {10, 100, 1000, 10000, 50000};
@@ -137,9 +198,10 @@ int main() {
     vector<Algo> algos = {
         {"BubbleSort", bubbleSort, true},
         {"SelectionSort", selectionSort, true},
-        {"InsertionSort", insertionSort, true},
+        {"InsertionSort", insertionSortWrapper, true},
         {"MergeSort", mergeSortWrapper, false},
         {"QuickSort", quickSortWrapper, false},
+        {"IntroSort", introSortWrapper, false},
         {"StdSort", stdSortWrapper, false}
     };
 
@@ -153,20 +215,29 @@ int main() {
 
                 vector<int> data = generateData(n, (DataType)t);
 
-                double t_total = 0;
-                int repeats = (n < 100) ? 100 : 1;
+                int repeats = 1;
+                if (n <= 10) repeats = 200000;
+                else if (n <= 100) repeats = 20000;
+                else if (n <= 1000) repeats = 500;
+                else if (n <= 10000) repeats = 10;
 
-                for(int r = 0; r < repeats; r++) {
-                    vector<int> copy = data;
-                    t_total += measureTime(algo.func, copy);
+                vector<vector<int>> copies(repeats, data);
+
+                auto start = high_resolution_clock::now();
+                for (int r = 0; r < repeats; r++) {
+                    algo.func(copies[r]);
                 }
+                auto end = high_resolution_clock::now();
 
-                fout << algo.name << "," << n << "," << typeNames[t] << "," << fixed << setprecision(6) << t_total/repeats << "\n";
+                duration<double> diff = end - start;
+                double t_mediu = diff.count() / repeats;
+
+                fout << algo.name << "," << n << "," << typeNames[t] << "," << t_mediu << "\n";
             }
         }
     }
 
     fout.close();
-    cout << "Gata! Deschide rezultate_sortare.csv pentru a vedea datele.\n";
+    cout << "Gata!\n";
     return 0;
 }
